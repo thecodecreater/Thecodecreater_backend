@@ -18,6 +18,7 @@ connectDB();
 app.use(express.json({ limit: '10mb' }));
 app.use(cors({
   origin: [
+    'https://thecodecreater.com', // live frontend
     'https://thecodecreater-adminpanel-thzy.vercel.app',
     'https://thecodecreater-frontend.vercel.app',
     'http://localhost:3001', // admin panel dev
