@@ -20,6 +20,7 @@ app.use(cors({
   origin: [
     'https://thecodecreater.com', // live frontend
     'https://thecodecreater-adminpanel-thzy.vercel.app',
+    'https://thecodecreater-adminpanel-my1u.vercel.app',
     'https://thecodecreater-frontend.vercel.app',
     'http://localhost:3001', // admin panel dev
     'http://localhost:3000'  // frontend dev
