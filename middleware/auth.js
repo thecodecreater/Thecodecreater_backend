@@ -1,15 +1,66 @@
 const jwt = require('jsonwebtoken');
+const ErrorResponse = require('../utils/errorResponse');
 
-const auth = (req, res, next) => {
-  const token = req.header('Authorization')?.replace('Bearer ', '');
-  if (!token) return res.status(401).json({ message: 'No token, authorization denied' });
+// Protect routes
+const protect = (req, res, next) => {
   try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    req.user = decoded;
-    next();
+    let token;
+
+    // Get token from header
+    if (req.headers.authorization && req.headers.authorization.startsWith('Bearer')) {
+      token = req.headers.authorization.split(' ')[1];
+    }
+    // Get token from cookie
+    else if (req.cookies.token) {
+      token = req.cookies.token;
+    }
+
+    // Make sure token exists
+    if (!token) {
+      return next(new ErrorResponse('Not authorized to access this route', 401));
+    }
+
+    try {
+      // Verify token
+      const decoded = jwt.verify(token, process.env.JWT_SECRET);
+      req.user = decoded;
+      next();
+    } catch (err) {
+      return next(new ErrorResponse('Not authorized to access this route', 401));
+    }
   } catch (err) {
-    res.status(401).json({ message: 'Token is not valid' });
+    return next(new ErrorResponse('Not authorized to access this route', 401));
   }
 };
 
-module.exports = auth;
+// Grant access to specific roles
+const authorize = (...roles) => {
+  return (req, res, next) => {
+    if (!roles.includes(req.user.role)) {
+      return next(
+        new ErrorResponse(
+          `User role ${req.user.role} is not authorized to access this route`,
+          403
+        )
+      );
+    }
+    next();
+  };
+};
+
+// Role-based authorization middleware
+const admin = (req, res, next) => {
+  if (req.user && req.user.role === 'admin') {
+    next();
+  } else {
+    return next(
+      new ErrorResponse('Not authorized to access this route as admin', 403)
+    );
+  }
+};
+
+module.exports = {
+  protect,
+  authorize,
+  admin
+};

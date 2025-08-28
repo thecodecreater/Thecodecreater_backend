@@ -1,126 +1,146 @@
 const express = require('express');
-const cors = require('cors');
+const mongoose = require('mongoose');
 const dotenv = require('dotenv');
-const http = require('http');
-const { Server } = require('socket.io');
-const connectDB = require('./config/db');
+const cors = require('cors');
+const path = require('path');
+const bodyParser = require('body-parser');
 
-// Load env vars
+// Load environment variables
 dotenv.config();
 
 const app = express();
-const server = http.createServer(app);
-const io = new Server(server, { cors: { origin: '*' } });
 
-// Connect MongoDB
-connectDB();
-
-app.use(express.json({ limit: '10mb' }));
-app.use(cors({
-  origin: [
-    'https://thecodecreater.com', // live frontend
-    'https://thecodecreater-adminpanel-thzy.vercel.app',
-    'https://thecodecreater-adminpanel-my1u.vercel.app',
-    'https://thecodecreater-frontend.vercel.app',
-    'http://localhost:3001', // admin panel dev
-    'http://localhost:3000'  // frontend dev
-  ],
+// Middleware - CORS setup
+const corsOptions = {
+  origin: '*',
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
   credentials: true
-}));
+};
+app.use(cors(corsOptions));
+app.options('*', cors(corsOptions));
 
-// Advanced API routes
-// User profile & messages routes above
-app.use('/api/auth', require('./routes/auth'));
-const userAuthRoutes = require('./routes/userAuth');
-const userMessagesRoutes = require('./routes/userMessages');
-app.use('/api/users', userAuthRoutes);
-app.use('/api/users', require('./routes/forgotPassword'));
-app.use('/api/user/messages', userMessagesRoutes);
-app.use('/api/user/profile', require('./routes/userProfile'));
-app.use('/api/admin/users', require('./routes/adminUsers'));
-app.use('/api/admin/messages', require('./routes/adminMessages'));
-app.use('/api/admin/blogs', require('./routes/adminBlogs'));
-app.use('/api/admin/testimonials', require('./routes/adminTestimonials'));
-app.use('/api/admin/comments', require('./routes/adminComments'));
-app.use('/api/services', require('./routes/services'));
-app.use('/api/portfolio', require('./routes/portfolio'));
-app.use('/api/blogs', require('./routes/blogs'));
-app.use('/api/testimonials', require('./routes/testimonials'));
-app.use('/api/blogs', require('./routes/blogComments'));
-app.use('/api/upload', require('./routes/upload'));
-app.use('/api/header', require('./routes/header'));
-app.use('/api/analytics', require('./routes/analytics'));
-app.use('/api/contact', require('./routes/contact'));
-app.use('/api/project-consultation', require('./routes/projectConsultation'));
-app.use('/api/chat', require('./routes/chat'));
-app.use('/api/faqs', require('./routes/faq'));
+// Body parser middleware
+app.use(bodyParser.json({ limit: '50mb' }));
+app.use(bodyParser.urlencoded({ extended: true, limit: '50mb' }));
 
-// Health check
+// Request logging
+app.use((req, res, next) => {
+  console.log(`[${new Date().toISOString()}] ${req.method} ${req.originalUrl}`);
+  next();
+});
+
+// Database connection
+mongoose.connect(process.env.MONGO_URI, {
+  useNewUrlParser: true,
+  useUnifiedTopology: true,
+})
+.then(() => console.log('✅ MongoDB connected'))
+.catch(err => console.error('❌ MongoDB connection error:', err));
+
+// Test route
+app.get('/', (req, res) => {
+  res.json({ 
+    status: 'success',
+    message: 'Server is running!',
+    timestamp: new Date().toISOString()
+  });
+});
+
+// Health check endpoint
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'OK', message: 'API is working.' });
+  res.json({
+    status: 'ok',
+    database: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected',
+    timestamp: new Date().toISOString()
+  });
 });
 
-// Global error handler
+const NewProject = require('./models/NewProject');
+
+// Project submission endpoint
+
+app.post('/api/project-submit', async (req, res) => {
+  try {
+    const { name, email, projectType, budget, message, phone, website } = req.body;
+    
+    // Simple validation
+    if (!name || !email || !projectType || !budget) {
+      return res.status(400).json({
+        success: false,
+        message: 'Missing required fields',
+        required: ['name', 'email', 'projectType', 'budget']
+      });
+    }
+    
+    console.log('New project submission:', { name, email, projectType, budget });
+    
+    // Create and save project to MongoDB
+    const newProject = new NewProject({
+      name,
+      email,
+      phone: phone || '',
+      website: website || '',
+      projectType,
+      budget,
+      message: message || ''
+    });
+    
+    const savedProject = await newProject.save();
+    console.log('Project saved to database:', savedProject._id);
+    
+    res.status(201).json({
+      success: true,
+      message: 'Project submitted successfully!',
+      data: savedProject
+    });
+    
+  } catch (error) {
+    console.error('Error submitting project:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error',
+      error: error.message
+    });
+  }
+});
+
+// API routes
+console.log('Registering API routes...');
+try {
+  // Import and use your existing routes
+  app.use('/api/contact', require('./routes/contact'));
+  app.use('/api/project-submissions', require('./routes/projectSubmissions'));
+  app.use('/api/chat', require('./routes/chatRoutes'));
+  
+  console.log('All routes registered successfully');
+} catch (error) {
+  console.error('Error loading routes:', error);
+}
+
+// 404 handler
+app.use((req, res) => {
+  res.status(404).json({
+    success: false,
+    message: 'Endpoint not found',
+    path: req.path
+  });
+});
+
+// Error handling middleware
 app.use((err, req, res, next) => {
-  console.error(err.stack);
-  res.status(500).json({ message: 'Server error', error: err.message });
-});
-
-// Socket.io connection for real-time updates
-const ChatMessage = require('./models/ChatMessage');
-
-io.on('connection', (socket) => {
-  console.log('Socket.io client connected:', socket.id);
-
-  // Join room by user email or 'admin'
-  socket.on('join', ({ email, isAdmin }) => {
-    const room = isAdmin ? 'admin' : email;
-    socket.join(room);
-    socket.room = room;
-  });
-
-  // Handle sending chat message
-  socket.on('chat-message', async (data) => {
-    // data: { from, to, message }
-    const { from, to, message } = data;
-    if (!from || !to || !message) return;
-    // Save to DB
-    const chatMsg = await ChatMessage.create({ from, to, message });
-    // Emit to recipient room
-    io.to(to).emit('chat-message', {
-      from,
-      to,
-      message,
-      timestamp: chatMsg.timestamp,
-      _id: chatMsg._id
-    });
-    // Emit to sender for instant feedback
-    socket.emit('chat-message', {
-      from,
-      to,
-      message,
-      timestamp: chatMsg.timestamp,
-      _id: chatMsg._id
-    });
-  });
-
-  // Typing indicator (optional)
-  socket.on('typing', ({ from, to }) => {
-    io.to(to).emit('typing', { from });
-  });
-
-  // Legacy admin-update event
-  socket.on('admin-update', (data) => {
-    socket.broadcast.emit('frontend-update', data);
-  });
-
-  // Properly handle disconnect
-  socket.on('disconnect', () => {
-    console.log('Socket.io client disconnected:', socket.id);
+  console.error('🚨 Error:', err.stack);
+  res.status(500).json({
+    success: false,
+    message: 'Something went wrong!',
+    error: process.env.NODE_ENV === 'development' ? err.message : 'Internal server error'
   });
 });
 
 const PORT = process.env.PORT || 5000;
-server.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
+
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`🚀 Server running on port ${PORT}`);
+  console.log(`🌐 Access the API at http://localhost:${PORT}`);
+  console.log(`⚡ Health check: http://localhost:${PORT}/api/health`);
 });

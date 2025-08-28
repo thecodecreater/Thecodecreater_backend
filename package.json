@@ -1,10 +1,10 @@
 {
   "name": "digital-agency-backend",
   "version": "1.0.0",
-  "main": "server.js",
+  "main": "server-fixed.js",
   "scripts": {
-    "dev": "nodemon server.js",
-    "start": "node server.js"
+    "dev": "nodemon server-fixed.js",
+    "start": "node server-fixed.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
